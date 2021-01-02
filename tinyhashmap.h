@@ -37,13 +37,13 @@
    mytype_t* p_elem = HMAP_PTR_STR(map, "qux");
    p_elem->a = 123;
    -- New keys initially have memory uninitialized
-   -- Pointers can get invalidated when a new key is added
+   -- Pointers can get invalidated when a key is added/removed
 
    -- Looking up the index for a given key:
    ptrdiff_t idx_foo = HMAP_IDX_STR(map, "foo");
    ptrdiff_t idx_invalid = HMAP_IDX_STR(map, "invalid");
    -- now idx_foo >= 0, idx_invalid == -1, map[idx_foo] == foo_element
-   -- Indices can change when a new key is added
+   -- Indices can change when a key is added/removed
 
    -- Clear all elements (keep memory allocated):
    HMAP_CLEAR(map);
@@ -117,18 +117,19 @@ typedef unsigned __int32 uint32_t;
 #endif
 
 #define HMAP_LEN(b) ((b) ? HMAP__HDR(b)->len : 0)
-#define HMAP_CAP(b) ((b) ? HMAP__HDR(b)->cap : 0)
+#define HMAP_MAX(b) ((b) ? HMAP__HDR(b)->maxlen : 0)
+#define HMAP_CAP(b) ((b) ? HMAP__HDR(b)->maxlen + 1 : 0)
 #define HMAP_KEY(b, idx) (HMAP__HDR(b)->keys[idx])
 #define HMAP_SETNULLVAL(b, val) (HMAP__FIT1(b), b[-1] = (val))
 #define HMAP_CLEAR(b) ((b) ? (memset(HMAP__HDR(b)->keys, 0, HMAP_CAP(b) * sizeof(uint32_t)), HMAP__HDR(b)->len = 0) : 0)
 #define HMAP_FREE(b) ((b) ? (free(HMAP__HDR(b)->keys), free(HMAP__HDR(b)), (b) = NULL) : 0)
-#define HMAP_FIT(b, n) ((!(n) || ((b) && (size_t)(n) * 2 < HMAP_CAP(b))) ? 0 : HMAP__GROW(b, n))
-#define HMAP_TRYFIT(b, n) (HMAP_FIT((b), (n)), (!(n) || ((b) && (size_t)(n) * 2 < HMAP_CAP(b))))
+#define HMAP_FIT(b, n) ((!(n) || ((b) && (size_t)(n) * 2 <= HMAP_MAX(b))) ? 0 : HMAP__GROW(b, n))
+#define HMAP_TRYFIT(b, n) (HMAP_FIT((b), (n)), (!(n) || ((b) && (size_t)(n) * 2 <= HMAP_MAX(b))))
 
 #define HMAP_SET(b, key, val) (HMAP__FIT1(b), b[hmap__idx(HMAP__HDR(b), (key), 1, 0)] = (val))
 #define HMAP_GET(b, key) (HMAP__FIT1(b), b[hmap__idx(HMAP__HDR(b), (key), 0, 0)])
 #define HMAP_HAS(b, key) ((b) ? hmap__idx(HMAP__HDR(b), (key), 0, 0) != -1 : 0)
-#define HMAP_DEL(b, key) ((b) ? hmap__idx(HMAP__HDR(b), (key), 0, 1) != -1 : 0)
+#define HMAP_DEL(b, key) ((b) ? hmap__idx(HMAP__HDR(b), (key), 0, sizeof(*(b))) != -1 : 0)
 #define HMAP_PTR(b, key) (HMAP__FIT1(b), &b[hmap__idx(HMAP__HDR(b), (key), 1, 0)])
 #define HMAP_IDX(b, key) ((b) ? hmap__idx(HMAP__HDR(b), (key), 0, 0) : -1)
 
@@ -150,26 +151,26 @@ static uint32_t hash_string(const char* str)
 }
 #endif
 
-struct hmap__hdr { size_t len, cap; uint32_t *keys; };
+struct hmap__hdr { size_t len, maxlen; uint32_t *keys; };
 #define HMAP__HDR(b) (((struct hmap__hdr *)&(b)[-1])-1)
 #define HMAP__GROW(b, n) (*(void**)(&(b)) = hmap__grow(HMAP__HDR(b), (void*)(b), sizeof(*(b)), (size_t)(n)))
-#define HMAP__FIT1(b) ((b) && HMAP_LEN(b) * 2 < HMAP_CAP(b) ? 0 : HMAP__GROW(b, 0))
+#define HMAP__FIT1(b) ((b) && HMAP_LEN(b) * 2 <= HMAP_MAX(b) ? 0 : HMAP__GROW(b, 0))
 
 static void* hmap__grow(struct hmap__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t reserve)
 {
 	struct hmap__hdr *new_hdr;
 	char *new_vals;
-	size_t new_cap = (old_ptr ? old_hdr->cap * 2 : 16);
-	while (new_cap && new_cap / 2 < reserve)
-		if (!(new_cap *= 2))
+	size_t new_max = (old_ptr ? old_hdr->maxlen * 2 + 1 : 15);
+	while (new_max && new_max / 2 <= reserve)
+		if (!(new_max = new_max * 2 + 1))
 			return old_ptr; /* overflow */
 
-	new_hdr = (struct hmap__hdr *)malloc(sizeof(struct hmap__hdr) + (new_cap + 1) * elem_size);
+	new_hdr = (struct hmap__hdr *)malloc(sizeof(struct hmap__hdr) + (new_max + 2) * elem_size);
 	if (!new_hdr)
 		return old_ptr; /* out of memory */
 
-	new_hdr->cap = new_cap;
-	new_hdr->keys = (uint32_t *)calloc(new_cap, sizeof(uint32_t));
+	new_hdr->maxlen = new_max;
+	new_hdr->keys = (uint32_t *)calloc(new_max + 1, sizeof(uint32_t));
 	if (!new_hdr->keys)
 		return (free(new_hdr), old_ptr); /* out of memory */
 
@@ -178,14 +179,14 @@ static void* hmap__grow(struct hmap__hdr *old_hdr, void* old_ptr, size_t elem_si
 	{
 		size_t i;
 		char* old_vals = ((char*)(old_hdr + 1)) + elem_size;
-		for (i = 0; i < old_hdr->cap; i++)
+		for (i = 0; i <= old_hdr->maxlen; i++)
 		{
 			uint32_t key, j;
 			if (!old_hdr->keys[i])
 				continue;
 			for (key = old_hdr->keys[i], j = key;; j++)
 			{
-				if (!new_hdr->keys[j &= new_hdr->cap - 1])
+				if (!new_hdr->keys[j &= new_hdr->maxlen])
 				{
 					new_hdr->keys[j] = key;
 					memcpy(new_vals + j * elem_size, old_vals + i * elem_size, elem_size);
@@ -215,9 +216,21 @@ static ptrdiff_t hmap__idx(struct hmap__hdr* hdr, uint32_t key, int add, int del
 
 	for (i = key;; i++)
 	{
-		if (hdr->keys[i &= hdr->cap - 1] == key)
+		if (hdr->keys[i &= hdr->maxlen] == key)
 		{
-			if (del) { hdr->len --; hdr->keys[i] = 0; }
+			if (del)
+			{
+				hdr->len--;
+				hdr->keys[i] = 0;
+				while ((key = hdr->keys[i = (i + 1) & hdr->maxlen]) != 0)
+				{
+					if ((key = (uint32_t)hmap__idx(hdr, key, 1, 0)) == i) continue;
+					hdr->len--;
+					hdr->keys[i] = 0;
+					memcpy(((char*)(hdr + 1)) + (key + 1) * del,
+						((char*)(hdr + 1)) + (i + 1) * del, del);
+				}
+			}
 			return (ptrdiff_t)i;
 		}
 		if (!hdr->keys[i])

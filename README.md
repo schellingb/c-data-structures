@@ -49,7 +49,7 @@ mytype_t* p_elem = HMAP_PTR_STR(map, "qux");
 p_elem->a = 123;
 ```
 New keys initially have memory uninitialized  
-Pointers can get invalidated when a new key is added
+Pointers can get invalidated when a key is added/removed
 
 #### Looking up the index for a given key
 ```c
@@ -57,7 +57,7 @@ ptrdiff_t idx_foo = HMAP_IDX_STR(map, "foo");
 ptrdiff_t idx_invalid = HMAP_IDX_STR(map, "invalid");
 ```
 Now `idx_foo >= 0`, `idx_invalid == -1`, `map[idx_foo] == foo_element`  
-Indices can change when a new key is added
+Indices can change when a key is added/removed
 
 #### Clear all elements (keep memory allocated)
 ```c

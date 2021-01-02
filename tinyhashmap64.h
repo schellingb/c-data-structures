@@ -37,13 +37,13 @@
    mytype_t* p_elem = HMAP64_PTR_STR(map, "qux");
    p_elem->a = 123;
    -- New keys initially have memory uninitialized
-   -- Pointers can get invalidated when a new key is added
+   -- Pointers can get invalidated when a key is added/removed
 
    -- Looking up the index for a given key:
    ptrdiff_t idx_foo = HMAP64_IDX_STR(map, "foo");
    ptrdiff_t idx_invalid = HMAP64_IDX_STR(map, "invalid");
    -- now idx_foo >= 0, idx_invalid == -1, map[idx_foo] == foo_element
-   -- Indices can change when a new key is added
+   -- Indices can change when a key is added/removed
 
    -- Clear all elements (keep memory allocated):
    HMAP64_CLEAR(map);
@@ -117,18 +117,19 @@ typedef unsigned __int64 uint64_t;
 #endif
 
 #define HMAP64_LEN(b) ((b) ? HMAP64__HDR(b)->len : 0)
-#define HMAP64_CAP(b) ((b) ? HMAP64__HDR(b)->cap : 0)
+#define HMAP64_MAX(b) ((b) ? HMAP64__HDR(b)->maxlen : 0)
+#define HMAP64_CAP(b) ((b) ? HMAP64__HDR(b)->maxlen + 1 : 0)
 #define HMAP64_KEY(b, idx) (HMAP64__HDR(b)->keys[idx])
 #define HMAP64_SETNULLVAL(b, val) (HMAP64__FIT1(b), b[-1] = (val))
 #define HMAP64_CLEAR(b) ((b) ? (memset(HMAP64__HDR(b)->keys, 0, HMAP64_CAP(b) * sizeof(uint64_t)), HMAP64__HDR(b)->len = 0) : 0)
 #define HMAP64_FREE(b) ((b) ? (free(HMAP64__HDR(b)->keys), free(HMAP64__HDR(b)), (b) = NULL) : 0)
-#define HMAP64_FIT(b, n) ((!(n) || ((b) && (size_t)(n) * 2 < HMAP64_CAP(b))) ? 0 : HMAP64__GROW(b, n))
-#define HMAP64_TRYFIT(b, n) (HMAP64_FIT((b), (n)), (!(n) || ((b) && (size_t)(n) * 2 < HMAP64_CAP(b))))
+#define HMAP64_FIT(b, n) ((!(n) || ((b) && (size_t)(n) * 2 <= HMAP64_MAX(b))) ? 0 : HMAP64__GROW(b, n))
+#define HMAP64_TRYFIT(b, n) (HMAP64_FIT((b), (n)), (!(n) || ((b) && (size_t)(n) * 2 <= HMAP64_MAX(b))))
 
 #define HMAP64_SET(b, key, val) (HMAP64__FIT1(b), b[hmap64__idx(HMAP64__HDR(b), (key), 1, 0)] = (val))
 #define HMAP64_GET(b, key) (HMAP64__FIT1(b), b[hmap64__idx(HMAP64__HDR(b), (key), 0, 0)])
 #define HMAP64_HAS(b, key) ((b) ? hmap64__idx(HMAP64__HDR(b), (key), 0, 0) != -1 : 0)
-#define HMAP64_DEL(b, key) ((b) ? hmap64__idx(HMAP64__HDR(b), (key), 0, 1) != -1 : 0)
+#define HMAP64_DEL(b, key) ((b) ? hmap64__idx(HMAP64__HDR(b), (key), 0, sizeof(*(b))) != -1 : 0)
 #define HMAP64_PTR(b, key) (HMAP64__FIT1(b), &b[hmap64__idx(HMAP64__HDR(b), (key), 1, 0)])
 #define HMAP64_IDX(b, key) ((b) ? hmap64__idx(HMAP64__HDR(b), (key), 0, 0) : -1)
 
@@ -150,26 +151,26 @@ static uint64_t hash64_string(const char* str)
 }
 #endif
 
-struct hmap64__hdr { size_t len, cap; uint64_t *keys; };
+struct hmap64__hdr { size_t len, maxlen; uint64_t *keys; };
 #define HMAP64__HDR(b) (((struct hmap64__hdr *)&(b)[-1])-1)
 #define HMAP64__GROW(b, n) (*(void**)(&(b)) = hmap64__grow(HMAP64__HDR(b), (void*)(b), sizeof(*(b)), (size_t)(n)))
-#define HMAP64__FIT1(b) ((b) && HMAP64_LEN(b) * 2 < HMAP64_CAP(b) ? 0 : HMAP64__GROW(b, 0))
+#define HMAP64__FIT1(b) ((b) && HMAP64_LEN(b) * 2 <= HMAP64_MAX(b) ? 0 : HMAP64__GROW(b, 0))
 
 static void* hmap64__grow(struct hmap64__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t res)
 {
 	struct hmap64__hdr *new_hdr;
 	char *new_vals;
-	size_t new_cap = (old_ptr ? old_hdr->cap * 2 : 16);
-	while (new_cap && new_cap / 2 < res)
-		if (!(new_cap *= 2))
+	size_t new_max = (old_ptr ? old_hdr->maxlen * 2 + 1 : 16);
+	while (new_max && new_max / 2 <= res)
+		if (!(new_max = new_max * 2 + 1))
 			return old_ptr; /* overflow */
 
-	new_hdr = (struct hmap64__hdr *)malloc(sizeof(struct hmap64__hdr) + (new_cap + 1) * elem_size);
+	new_hdr = (struct hmap64__hdr *)malloc(sizeof(struct hmap64__hdr) + (new_max + 2) * elem_size);
 	if (!new_hdr)
 		return old_ptr; /* out of memory */
 
-	new_hdr->cap = new_cap;
-	new_hdr->keys = (uint64_t *)calloc(new_cap, sizeof(uint64_t));
+	new_hdr->maxlen = new_max;
+	new_hdr->keys = (uint64_t *)calloc(new_max + 1, sizeof(uint64_t));
 	if (!new_hdr->keys)
 		return (free(new_hdr), old_ptr); /* out of memory */
 
@@ -178,14 +179,14 @@ static void* hmap64__grow(struct hmap64__hdr *old_hdr, void* old_ptr, size_t ele
 	{
 		size_t i;
 		char* old_vals = ((char*)(old_hdr + 1)) + elem_size;
-		for (i = 0; i < old_hdr->cap; i++)
+		for (i = 0; i <= old_hdr->maxlen; i++)
 		{
 			uint64_t key, j;
 			if (!old_hdr->keys[i])
 				continue;
 			for (key = old_hdr->keys[i], j = key;; j++)
 			{
-				if (!new_hdr->keys[j &= new_hdr->cap - 1])
+				if (!new_hdr->keys[j &= new_hdr->maxlen])
 				{
 					new_hdr->keys[j] = key;
 					memcpy(new_vals + j * elem_size, old_vals + i * elem_size, elem_size);
@@ -215,9 +216,21 @@ static ptrdiff_t hmap64__idx(struct hmap64__hdr* hdr, uint64_t key, int add, int
 
 	for (i = key;; i++)
 	{
-		if (hdr->keys[i &= hdr->cap - 1] == key)
+		if (hdr->keys[i &= hdr->maxlen] == key)
 		{
-			if (del) { hdr->len --; hdr->keys[i] = 0; }
+			if (del)
+			{
+				hdr->len--;
+				hdr->keys[i] = 0;
+				while ((key = hdr->keys[i = (i + 1) & hdr->maxlen]) != 0)
+				{
+					if ((key = (uint64_t)hmap64__idx(hdr, key, 1, 0)) == i) continue;
+					hdr->len--;
+					hdr->keys[i] = 0;
+					memcpy(((char*)(hdr + 1)) + (key + 1) * del,
+						((char*)(hdr + 1)) + (i + 1) * del, del);
+				}
+			}
 			return (ptrdiff_t)i;
 		}
 		if (!hdr->keys[i])
