@@ -39,7 +39,7 @@
    -- now BUF_LEN(buf) == 199, everything past 30 shifted 1 up
 
    -- Remove an element in the middle, swapping the last element into it:
-   BUF_SAWPREMOVE(buf, 10);
+   BUF_SWAPREMOVE(buf, 10);
    -- now BUF_LEN(buf) == 198, element 198 was copied into 10
 
    -- Insert an element into the middle of the array:

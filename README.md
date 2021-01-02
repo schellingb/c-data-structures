@@ -177,7 +177,7 @@ Now `BUF_LEN(buf) == 199`, everything past 30 shifted 1 up
 
 #### Remove an element in the middle, swapping the last element into it
 ```c
-BUF_SAWPREMOVE(buf, 10);
+BUF_SWAPREMOVE(buf, 10);
 ```
 Now `BUF_LEN(buf) == 198`, element 198 was copied into 10
 
