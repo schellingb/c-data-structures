@@ -133,7 +133,17 @@ typedef unsigned __int32 uint32_t;
 #define HMAP_PTR(b, key) (HMAP__FIT1(b), &b[hmap__idx(HMAP__HDR(b), (key), 1, 0)])
 #define HMAP_IDX(b, key) ((b) ? hmap__idx(HMAP__HDR(b), (key), 0, 0) : -1)
 
-#ifndef TINYHASHMAP_WITHOUT_STRINGS
+#ifdef __GNUC__
+#define HMAP__UNUSED __attribute__((__unused__))
+#else
+#define HMAP__UNUSED
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4505) //unreferenced local function has been removed
+#endif
+
 #define HMAP_SET_STR(b, string_key, val) HMAP_SET(b, hash_string(string_key), val)
 #define HMAP_GET_STR(b, string_key)      HMAP_GET(b, hash_string(string_key))
 #define HMAP_HAS_STR(b, string_key)      HMAP_HAS(b, hash_string(string_key))
@@ -141,7 +151,7 @@ typedef unsigned __int32 uint32_t;
 #define HMAP_PTR_STR(b, string_key)      HMAP_PTR(b, hash_string(string_key))
 #define HMAP_IDX_STR(b, string_key)      HMAP_IDX(b, hash_string(string_key))
 
-static uint32_t hash_string(const char* str)
+HMAP__UNUSED static uint32_t hash_string(const char* str)
 {
 	unsigned char c;
 	uint32_t hash = (uint32_t)0x811c9dc5;
@@ -149,14 +159,13 @@ static uint32_t hash_string(const char* str)
 		hash = ((hash * (uint32_t)0x01000193) ^ (uint32_t)c);
 	return (hash ? hash : 1);
 }
-#endif
 
 struct hmap__hdr { size_t len, maxlen; uint32_t *keys; };
 #define HMAP__HDR(b) (((struct hmap__hdr *)&(b)[-1])-1)
 #define HMAP__GROW(b, n) (*(void**)(&(b)) = hmap__grow(HMAP__HDR(b), (void*)(b), sizeof(*(b)), (size_t)(n)))
 #define HMAP__FIT1(b) ((b) && HMAP_LEN(b) * 2 <= HMAP_MAX(b) ? 0 : HMAP__GROW(b, 0))
 
-static void* hmap__grow(struct hmap__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t reserve)
+HMAP__UNUSED static void* hmap__grow(struct hmap__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t reserve)
 {
 	struct hmap__hdr *new_hdr;
 	char *new_vals;
@@ -207,7 +216,7 @@ static void* hmap__grow(struct hmap__hdr *old_hdr, void* old_ptr, size_t elem_si
 	return new_vals;
 }
 
-static ptrdiff_t hmap__idx(struct hmap__hdr* hdr, uint32_t key, int add, int del)
+HMAP__UNUSED static ptrdiff_t hmap__idx(struct hmap__hdr* hdr, uint32_t key, int add, size_t del)
 {
 	uint32_t i;
 
@@ -240,5 +249,9 @@ static ptrdiff_t hmap__idx(struct hmap__hdr* hdr, uint32_t key, int add, int del
 		}
 	}
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif

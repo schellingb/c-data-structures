@@ -133,7 +133,17 @@ typedef unsigned __int64 uint64_t;
 #define HMAP64_PTR(b, key) (HMAP64__FIT1(b), &b[hmap64__idx(HMAP64__HDR(b), (key), 1, 0)])
 #define HMAP64_IDX(b, key) ((b) ? hmap64__idx(HMAP64__HDR(b), (key), 0, 0) : -1)
 
-#ifndef TINYHASHMAP64_WITHOUT_STRINGS
+#ifdef __GNUC__
+#define HMAP__UNUSED __attribute__((__unused__))
+#else
+#define HMAP__UNUSED
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4505) //unreferenced local function has been removed
+#endif
+
 #define HMAP64_SET_STR(b, string_key, val) HMAP64_SET(b, hash64_string(string_key), val)
 #define HMAP64_GET_STR(b, string_key)      HMAP64_GET(b, hash64_string(string_key))
 #define HMAP64_HAS_STR(b, string_key)      HMAP64_HAS(b, hash64_string(string_key))
@@ -141,7 +151,7 @@ typedef unsigned __int64 uint64_t;
 #define HMAP64_PTR_STR(b, string_key)      HMAP64_PTR(b, hash64_string(string_key))
 #define HMAP64_IDX_STR(b, string_key)      HMAP64_IDX(b, hash64_string(string_key))
 
-static uint64_t hash64_string(const char* str)
+HMAP__UNUSED static uint64_t hash64_string(const char* str)
 {
 	unsigned char c;
 	uint64_t hash = (uint64_t)0xcbf29ce484222325;
@@ -149,14 +159,13 @@ static uint64_t hash64_string(const char* str)
 		hash = ((hash * (uint64_t)0x100000001b3) ^ (uint64_t)c);
 	return (hash ? hash : 1);
 }
-#endif
 
 struct hmap64__hdr { size_t len, maxlen; uint64_t *keys; };
 #define HMAP64__HDR(b) (((struct hmap64__hdr *)&(b)[-1])-1)
 #define HMAP64__GROW(b, n) (*(void**)(&(b)) = hmap64__grow(HMAP64__HDR(b), (void*)(b), sizeof(*(b)), (size_t)(n)))
 #define HMAP64__FIT1(b) ((b) && HMAP64_LEN(b) * 2 <= HMAP64_MAX(b) ? 0 : HMAP64__GROW(b, 0))
 
-static void* hmap64__grow(struct hmap64__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t res)
+HMAP__UNUSED static void* hmap64__grow(struct hmap64__hdr *old_hdr, void* old_ptr, size_t elem_size, size_t res)
 {
 	struct hmap64__hdr *new_hdr;
 	char *new_vals;
@@ -207,7 +216,7 @@ static void* hmap64__grow(struct hmap64__hdr *old_hdr, void* old_ptr, size_t ele
 	return new_vals;
 }
 
-static ptrdiff_t hmap64__idx(struct hmap64__hdr* hdr, uint64_t key, int add, int del)
+HMAP__UNUSED static ptrdiff_t hmap64__idx(struct hmap64__hdr* hdr, uint64_t key, int add, size_t del)
 {
 	uint64_t i;
 
@@ -240,5 +249,9 @@ static ptrdiff_t hmap64__idx(struct hmap64__hdr* hdr, uint64_t key, int add, int
 		}
 	}
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif

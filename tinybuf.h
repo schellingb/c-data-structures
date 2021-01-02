@@ -124,6 +124,13 @@
 
 #define BUF__HDR(b) (((struct buf__hdr *)(b))-1)
 struct buf__hdr { size_t len, cap; };
+
+#ifdef __GNUC__
+__attribute__((__unused__))
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4505) //unreferenced local function has been removed
+#endif
 static void *buf__grow(void *buf, size_t new_len, size_t elem_size)
 {
 	struct buf__hdr *new_hdr;
@@ -147,5 +154,8 @@ static void *buf__grow(void *buf, size_t new_len, size_t elem_size)
 	new_hdr->cap = new_cap;
 	return new_hdr + 1;
 }
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #endif
